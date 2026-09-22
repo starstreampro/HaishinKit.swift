@@ -6,21 +6,44 @@ import libsrt
 struct SRTSocketURL {
     static let defaultPort: Int = 9710
 
-    private static func getQueryItems(_ url: URL) -> [String: String] {
+    /// Query items in the order they appear in the URL (duplicates kept).
+    private static func getQueryItems(_ url: URL) -> [(key: String, value: String)] {
         let url = url.absoluteString
         if !url.contains("?") {
-            return [:]
+            return []
         }
         let queryString = url.split(separator: "?")[1]
         let queries = queryString.split(separator: "&")
-        var paramsReturn: [String: String] = [:]
+        var items: [(key: String, value: String)] = []
         for q in queries {
             let query = q.split(separator: "=", maxSplits: 1)
             if query.count == 2 {
-                paramsReturn[String(query[0])] = String(query[1])
+                items.append((key: String(query[0]), value: String(query[1])))
             }
         }
-        return paramsReturn
+        return items
+    }
+
+    /// Query items keyed by name (last occurrence wins), for single-value lookups.
+    private static func getQueryDictionary(_ url: URL) -> [String: String] {
+        var dictionary: [String: String] = [:]
+        for item in getQueryItems(url) {
+            dictionary[item.key] = item.value
+        }
+        return dictionary
+    }
+
+    /// Returns the options in the order they must be applied to a socket.
+    ///
+    /// `SRTO_TRANSTYPE` resets libsrt's preset group (latency, peerlatency, rcvlatency,
+    /// tlpktdrop, snddropdelay, messageapi, nakreport, payloadsize, linger, congestion)
+    /// to the transtype's defaults, so it has to be applied before any of them. Everything
+    /// else keeps the order it was written in the URL, which is what srt-live-transmit
+    /// and ffmpeg do as well.
+    static func applyOrder(_ options: [SRTSocketOption]) -> [SRTSocketOption] {
+        let transtype = options.filter { $0.name == .transtype }
+        let others = options.filter { $0.name != .transtype }
+        return transtype + others
     }
 
     let url: URL
@@ -35,7 +58,7 @@ struct SRTSocketURL {
     }
 
     var local: sockaddr_in? {
-        let queryItems = Self.getQueryItems(url)
+        let queryItems = Self.getQueryDictionary(url)
         let adapter = queryItems["adapter"] ?? "0.0.0.0"
         if let port = queryItems["port"] {
             return .init(adapter, port: Int(port) ?? url.port ?? Self.defaultPort)
@@ -47,9 +70,8 @@ struct SRTSocketURL {
         guard let url, let scheme = url.scheme, scheme == "srt" else {
             return nil
         }
-        let queryItems = Self.getQueryItems(url)
         var options: [SRTSocketOption] = []
-        for item in queryItems {
+        for item in Self.getQueryItems(url) {
             guard let name = SRTSocketOption.Name(rawValue: item.key) else {
                 continue
             }
@@ -57,6 +79,7 @@ struct SRTSocketURL {
                 options.append(option)
             }
         }
+        let queryItems = Self.getQueryDictionary(url)
         self.url = url
         self.mode = {
             switch queryItems["mode"] {
@@ -76,6 +99,6 @@ struct SRTSocketURL {
                 return .caller
             }
         }()
-        self.options = options
+        self.options = Self.applyOrder(options)
     }
 }
