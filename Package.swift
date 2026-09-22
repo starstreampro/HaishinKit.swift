@@ -37,7 +37,7 @@ let package = Package(
         .binaryTarget(
             name: "libsrt",
             url: "https://github.com/starstreampro/HaishinKit.swift/releases/download/libsrt-1.5.7-noenc/libsrt.xcframework.zip",
-            checksum: "fdb7d849a3d6aa24787b448bcacffafd247bb4b13e4b3bf7bbca4c6ae1333873"
+            checksum: "80aea7fd47d90b05d1c520de0c7389d131dcec2eefc55c4a551a1281bc04e859"
         ),
         .binaryTarget(
             name: "libdatachannel",
